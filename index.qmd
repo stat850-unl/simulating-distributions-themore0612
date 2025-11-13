@@ -1,30 +1,60 @@
 ---
 title: "Simulation"
-author: "Your Name Here"
+author: "Zora Zhang"
 format: html
 ---
 
-
 # Warming Up
-
 Most statistical software packages have several built-in distributions to handle the most common situations statisticians come across when simulating values.
-
 Remember to set your seeds for these exercises so that you get the same answer each time the code is evaluated. 
 
 ## Exponential Distribution
 
 1. Simulate 1000 draws from the exponential distribution $$f(x) = \lambda e^{-\lambda x},\;\;\;\; x\geq0, \text{ with } \lambda=3$$
-
-
 2. Create a density plot of your values. Add the PDF of the exponential(3) distribution to your plot in a different color. How do they compare?
+
+With 1000 samples, the empirical density closely follows the theoretical PDF. Small deviations are present due to sampling variability, but the overall shape matches well: high probability near 0, decaying exponentially as x increases.
 
 3. How might  you use your 1000 draws to estimate the probability that $x > 1$? Provide an estimate using only your 1000 draws, and compare this estimate to one derived from `pexp` (R) or `scipy.stats.expon.cdf` (Python).
 
 4. What is the average error from using a $n=1000$ simulation instead of a numerical calculation for the probability that $x>1$? Write a function to calculate the error from one simulation, and evaluate that function 100 times to calculate the expected error from using a simulation estimate rather than deterministic numerical integration.
+```{r}
+library(ggplot2)
+library(tibble)
+library(tidyr)
+suppressPackageStartupMessages(library(dplyr))
 
+# Questions 1, 2
+set.seed(25111110)
+tibble(
+    exp = rexp(1000, rate=3)
+) |>
+    pivot_longer(1, names_to = "distribution", values_to = "value") |>
+    ggplot(aes(x = value)) + 
+    geom_density(fill = "darkgreen") + 
+    stat_function(fun = dexp, args = list(rate = 3), color = "red", linetype = "dashed")
 
+# Question 3.
+x <- rexp(1000, rate = 3)
+p_empirical <- mean(x < 1)
+p_theoretical <- pexp(1, rate = 3)
+data.frame(
+  Empirical = p_empirical,
+  Theoretical = p_theoretical,
+  Error = abs(p_empirical - p_theoretical)
+)
 
-
+# Question 4.
+calc_error <- function(n = 1000, rate = 3, threshold = 1) {
+  sims <- rexp(n, rate = rate)
+  p_emp <- mean(sims < threshold)
+  p_true <- pexp(threshold, rate = rate)
+  abs(p_emp - p_true)
+}
+errors <- replicate(100, calc_error())
+mean_error <- mean(errors)
+mean_error
+```
 ## Gamma Distribution
 
 The Gamma distribution is an exponential family, so it has MLEs that are unbiased and efficient estimators, if somewhat challenging to calculate in closed form. 
@@ -49,5 +79,87 @@ $$f(x | \alpha, \beta) = \frac{\beta^\alpha x^{\alpha-1} e^{-x}}{\Gamma(\alpha)}
 
 3. Now, let's vary the sample size. For $n=\{20, 30, 50, 100\}$, use your function to evaluate the error for $\alpha=1, \beta=2$. How does the error change as $n$ increases? Provide an appropriate plot as well as a description of the changes for increasing $n$. 
 
+```{r}
+library(MASS)
+library(tibble)
+library(dplyr)
+library(ggplot2)
 
+set.seed(25111310)
+estimate_gamma_mle <- function(x, alpha_true = NULL, rate_true = NULL) {
+  fit <- fitdistr(x, densfun = "gamma")
+  alpha_hat <- fit$estimate[["shape"]]
+  rate_hat  <- fit$estimate[["rate"]]
+  
+  results <- list(
+    alpha_hat = alpha_hat,
+    rate_hat  = rate_hat
+  )
+  
+  if (!is.null(alpha_true) && !is.null(rate_true)) {
+    results$alpha_error <- alpha_hat - alpha_true
+    results$rate_error  <- rate_hat - rate_true
+  }
+  return(results)
+}
+
+# Question 3.
+alpha_values <- seq(0.5, 5, by = 0.5)
+rate_true <- 2
+
+error_data <- alpha_values %>%
+  lapply(function(a) {
+    x <- rgamma(100, shape = a, rate = rate_true)
+    res <- estimate_gamma_mle(x, alpha_true = a, rate_true = rate_true)
+    tibble(
+      alpha_true = a,
+      alpha_error = res$alpha_error,
+      rate_error = res$rate_error
+    )
+  }) %>%
+  bind_rows()
+
+error_data %>%
+  pivot_longer(cols = c(alpha_error, rate_error),
+               names_to = "parameter", values_to = "error") %>%
+  ggplot(aes(x = alpha_true, y = error, color = parameter)) +
+  geom_line() +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "MLE Estimation Error for Gamma Parameters (n = 100)",
+    x = "True α (shape)",
+    y = "Estimation Error"
+  )
+
+# Question 4.
+n_values <- c(30, 100, 300, 1000, 3000)
+alpha_true <- 2
+rate_true <- 2
+
+sample_size_errors <- n_values %>%
+  lapply(function(n) {
+    x <- rgamma(n, shape = alpha_true, rate = rate_true)
+    res <- estimate_gamma_mle(x, alpha_true, rate_true)
+    tibble(
+      n = n,
+      alpha_error = res$alpha_error,
+      rate_error = res$rate_error
+    )
+  }) %>%
+  bind_rows()
+
+sample_size_errors %>%
+  pivot_longer(cols = c(alpha_error, rate_error),
+               names_to = "parameter", values_to = "error") %>%
+  ggplot(aes(x = n, y = abs(error), color = parameter)) +
+  geom_line() +
+  geom_point() +
+  scale_x_log10() +
+  labs(
+    title = "Mean Absolute Error vs Sample Size for Gamma MLEs",
+    x = "Sample Size (log scale)",
+    y = "Absolute Estimation Error"
+)
+```
 
